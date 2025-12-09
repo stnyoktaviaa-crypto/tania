@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aplikasi Kasir Modern</title>
+
+<style>
+/* === THEME === */
+:root {
+  --bg:#eef2ff; --card:#fff; --text:#111;
+  --primary:#4361ee; --danger:#ef233c; --success:#2ecc71; --border:#ddd;
+}
+[data-theme="dark"] {
+  --bg:#0d1117; --card:#1f242d; --text:#eee;
+  --primary:#4895ef; --danger:#ff6b6b; --success:#57f287; --border:#444;
+}
+
+/* === BASE === */
+body { margin:0; font-family:Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
+
+/* === HEADER === */
+header {
+  display:flex; justify-content:space-between; align-items:center;
+  background:var(--card); padding:15px 20px; border-bottom:1px solid var(--border);
+  font-size:20px; font-weight:bold;
+}
+
+/* DARK MODE SWITCH */
+.switch { width:50px; height:25px; position:relative; }
+.switch input { display:none; }
+.slider { position:absolute; inset:0; background:gray; border-radius:25px; cursor:pointer; transition:.3s; }
+.slider:before { content:""; width:20px; height:20px; background:white;
+  position:absolute; left:3px; top:2px; border-radius:50%; transition:.3s; }
+input:checked + .slider { background:var(--primary); }
+input:checked + .slider:before { transform:translateX(24px); }
+
+/* === LAYOUT === */
+.container { display:grid; grid-template-columns:35% 65%; gap:20px; padding:20px; }
+.card {
+  background:var(--card); padding:20px; border-radius:10px;
+  box-shadow:0 3px 10px rgba(0,0,0,0.08);
+}
+
+/* INPUT */
+label { font-weight:bold; margin-top:10px; display:block; }
+input {
+  width:100%; padding:10px; border-radius:6px;
+  border:1px solid var(--border); margin-top:6px; background:transparent; color:var(--text);
+}
+
+/* BUTTONS */
+button {
+  width:100%; padding:12px; border:none; margin-top:10px;
+  border-radius:8px; cursor:pointer; font-weight:bold;
+  transition:.2s;
+}
+button:hover { opacity:.8; }
+
+.add { background:var(--primary); color:white; }
+.danger { background:var(--danger); color:white; }
+.success { background:var(--success); color:white; }
+.secondary { background:#ccc; }
+
+/* TABLE */
+table { width:100%; border-collapse:collapse; margin-top:10px; }
+table th, table td {
+  padding:10px; border-bottom:1px solid var(--border); text-align:center;
+}
+.delete-btn { background:var(--danger); color:white; border:none; padding:6px 10px; cursor:pointer; border-radius:6px; }
+
+/* PRINT AREA */
+#receipt {
+  display:none;
+  background:white;
+  padding:20px;
+  border-radius:10px;
+  font-size:16px;
+}
+@media print {
+  body * { display:none !important; }
+  #receipt, #receipt * { display:block !important; }
+  #receipt { position:fixed; top:0; left:0; width:100%; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  Aplikasi Kasir
+  <label class="switch">
+    <input type="checkbox" id="themeToggle">
+    <span class="slider"></span>
+  </label>
+</header>
+
+<div class="container">
+
+  <!-- FORM -->
+  <div class="card">
+    <h3>Tambah Barang</h3>
+
+    <label>Nama Barang</label>
+    <input list="namaList" id="namaBarang">
+    <datalist id="namaList"></datalist>
+
+    <label>Harga (Rp)</label>
+    <input type="number" id="hargaBarang">
+
+    <label>Jumlah</label>
+    <input type="number" id="jumlahBarang" value="1">
+
+    <button class="add" id="tambahBtn">+ Tambahkan</button>
+    <button class="danger" id="resetBtn">🗑 Reset</button>
+
+    <label>Diskon (%)</label>
+    <input type="number" id="diskon" value="0">
+
+    <hr>
+
+    <p>Subtotal: <b id="subtotal">0</b></p>
+    <p>Diskon: <b id="diskonRp">0</b></p>
+    <p>Pajak (11%): <b id="pajak">0</b></p>
+
+    <h2>Total: Rp <span id="totalAkhir">0</span></h2>
+
+    <button class="success" id="cetakBtn">🖨 Cetak Struk</button>
+  </div>
+
+  <!-- TABEL -->
+  <div class="card">
+    <h3>Keranjang</h3>
+    <table>
+      <thead><tr><th>Barang</th><th>Harga</th><th>Qty</th><th>Total</th><th></th></tr></thead>
+      <tbody id="tabelBody"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- STRUK -->
+<div id="receipt">
+  <h2 style="text-align:center">STRUK BELANJA</h2>
+  <div id="receiptBody"></div>
+  <p><strong>Waktu:</strong> <span id="waktuTransaksi"></span></p>
+</div>
+
+<script>
+let keranjang = [];
+const PPN = 0.11;
+
+const nama = document.getElementById("namaBarang");
+const harga = document.getElementById("hargaBarang");
+const jumlah = document.getElementById("jumlahBarang");
+const diskonInput = document.getElementById("diskon");
+const tabelBody = document.getElementById("tabelBody");
+
+function format(n){ return new Intl.NumberFormat("id-ID").format(n); }
+
+function update(){
+  tabelBody.innerHTML="";
+  let subtotal=0;
+
+  keranjang.forEach((item,i)=>{
+    subtotal+=item.total;
+    tabelBody.innerHTML+=`
+      <tr>
+        <td>${item.nama}</td>
+        <td>${format(item.harga)}</td>
+        <td>${item.jumlah}</td>
+        <td>${format(item.total)}</td>
+        <td><button class="delete-btn" onclick="hapus(${i})">X</button></td>
+      </tr>`;
+  });
+
+  let diskonRp=subtotal*(diskonInput.value/100);
+  let pajak=(subtotal-diskonRp)*PPN;
+  let total=subtotal-diskonRp+pajak;
+
+  subtotalEl.innerText=format(subtotal);
+  diskonRpEl.innerText=format(diskonRp);
+  pajakEl.innerText=format(pajak);
+  totalAkhirEl.innerText=format(total);
+}
+
+document.getElementById("tambahBtn").onclick=()=>{
+  if(!nama.value || !harga.value || jumlah.value<1) return alert("Isi lengkap!");
+
+  let exist=keranjang.find(x=>x.nama.toLowerCase()===nama.value.toLowerCase());
+  if(exist){
+    exist.jumlah+=Number(jumlah.value);
+    exist.total=exist.jumlah*exist.harga;
+  }else{
+    keranjang.push({
+      nama:nama.value,
+      harga:Number(harga.value),
+      jumlah:Number(jumlah.value),
+      total:Number(harga.value)*Number(jumlah.value)
+    });
+  }
+
+  nama.value=""; harga.value=""; jumlah.value=1;
+  update();
+};
+
+function hapus(i){ keranjang.splice(i,1); update(); }
+
+document.getElementById("resetBtn").onclick=()=>{
+  if(confirm("Hapus semua?")){ keranjang=[]; update(); }
+};
+
+diskonInput.oninput=update;
+
+const subtotalEl=document.getElementById("subtotal");
+const diskonRpEl=document.getElementById("diskonRp");
+const pajakEl=document.getElementById("pajak");
+const totalAkhirEl=document.getElementById("totalAkhir");
+
+document.getElementById("cetakBtn").onclick=()=>{
+  if(keranjang.length===0) return alert("Keranjang kosong!");
+
+  let area=document.getElementById("receiptBody");
+  area.innerHTML="";
+
+  keranjang.forEach(item=>{
+    area.innerHTML+=`<p>${item.nama} x${item.jumlah} — Rp ${format(item.total)}</p>`;
+  });
+
+  document.getElementById("waktuTransaksi").innerText=new Date().toLocaleString("id-ID");
+  window.print();
+};
+
+// DARK MODE
+const themeToggle=document.getElementById("themeToggle");
+themeToggle.onchange=()=>document.documentElement.toggleAttribute("data-theme",themeToggle.checked);
+</script>
+
+</body>
+</html>
